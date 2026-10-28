@@ -1,0 +1,17 @@
+library(dplyr)
+# This will read ALL .tsv files in your current working directory
+file_list <- list.files(pattern = "\\.tsv$")
+# Check which files were found
+print(file_list)
+# Read and process all files
+final_df <- lapply(file_list, function(file) {
+  read.table(file, header = TRUE, sep = "\t")
+}) %>% 
+  bind_rows() %>% 
+  replace(is.na(.), 0) %>%
+  group_by(Genus) %>%
+  summarise(across(where(is.numeric), mean)) %>%
+  ungroup()
+final_df <- as.data.frame(final_df)
+dim(final_df)
+write.csv(final_df,"merged_bacteria.csv",row.names=F)
