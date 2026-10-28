@@ -2,8 +2,8 @@ c <- read.csv("merged_bacteria_90%_prevalence.csv",row.names=1)
 library(microbiome)
 transform <- microbiome::transform
 rel <- transform(c, "compositional")
-write.csv(rel,"relative_abundance_merged_genus_90%_prevalence.csv)
-p <- read.csv("relative_abundance_merged_genus_90%_prevalence.csv",row.names=1)
+write.csv(rel,"relative_abundance_merged_bacteria_90%_prevalence.csv")
+p <- read.csv("relative_abundance_merged_bacteria_90%_prevalence.csv",row.names=1)
 m <- read.csv("metadata.csv")
 identical(m$Sample,colnames(p))
 m1 <- m
