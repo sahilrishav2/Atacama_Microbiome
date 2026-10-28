@@ -97,7 +97,6 @@ colnames(seq) <- paste0("ASV_", "#no. of ASV ids") #for giving unique ASV Ids to
 rownames(tax) <- colnames(seq)
 ps <- phyloseq(otu_table(seq, taxa_are_rows=FALSE), 
                tax_table(tax))
-library(microbiomeutilities)
 ps1 <- ps #assigning all the information of ps to a new object ps1
 rank_names(ps1) # check the taxonomy levels
 #Removing sequences not aligning to the bacteria
