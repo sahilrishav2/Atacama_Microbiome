@@ -1,0 +1,13 @@
+count <- read.csv("merged_bacteria.csv",row.names=1)
+dim(count)
+meta <- read.csv("metadata.csv")
+sample_cols <- which(colnames(count) %in% meta$Sample)
+head(sample_cols)
+identical(colnames(count),meta$Sample)
+n <- length(sample_cols)
+n
+presence <- rowSums(count[, sample_cols] > 0)
+prevalence <- presence / n
+keep <- prevalence >= 0.9
+filtered <- count[keep,]
+write.csv(filtered, "merged_bacteria_90%_prevalence.csv")
