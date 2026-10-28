@@ -1,0 +1,1 @@
+The aim of this study is to identify the plant-growth promoting microbes of the Atacama desert that can survive harsh environmental conditions. We analyzed large scale analysis of all the publicly available microbiome datasets of this region. The codes used for the analysis are provided here.
