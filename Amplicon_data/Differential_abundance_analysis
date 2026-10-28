@@ -1,0 +1,28 @@
+c <- read.csv("merged_bacteria_90%_prevalence.csv",row.names=1)
+library(microbiome)
+transform <- microbiome::transform
+rel <- transform(c, "compositional")
+write.csv(rel,"relative_abundance_merged_genus_90%_prevalence.csv)
+p <- read.csv("relative_abundance_merged_genus_90%_prevalence.csv",row.names=1)
+m <- read.csv("metadata.csv")
+identical(m$Sample,colnames(p))
+m1 <- m
+identical(m1$Sample,colnames(p))
+library(limma)
+snames <-  m1$Origin
+group <- snames
+mm <- model.matrix(~0 + group)
+y <- voom(p, mm, plot = T)
+head(mm)
+fit <- lmFit(y, mm)
+head(coef(fit))
+contr <- makeContrasts(groupPlant - groupSoil, levels = colnames(coef(fit)))
+tmp <- contrasts.fit(fit, contr)
+tmp <- eBayes(tmp)
+top.table <- topTable(tmp, sort.by = "P", n = Inf)
+head(top.table, 20)
+length(which(top.table$adj.P.Val < 0.05))
+newdf <- top.table[top.table$adj.P.Val < 0.05,]
+dim(newdf)
+newdf
+write.csv(newdf,"diff_plant_soil.csv")
