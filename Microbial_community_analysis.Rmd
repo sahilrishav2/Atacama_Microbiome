@@ -1,0 +1,133 @@
+###### Microbial community analyses
+##### Alpha diversity analysis
+
+library(phyloseq)
+library(ggplot2) 
+library(RColorBrewer)
+count <- read.csv("countdata.csv",header=T,row.names=1)
+meta <- read.csv("metadata.csv",header=T,row.names=1)
+ps <- phyloseq(otu_table(count, taxa_are_rows=TRUE), 
+               sample_data(meta))
+ps
+p <- plot_richness(ps, "Origin", color = "Origin", measures = c("Shannon","Simpson"))
+p + geom_boxplot(aes(x=Origin, colour = Origin)) +
+  labs(x = NULL, y = NULL) +
+  theme_bw() +                             
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black"),
+    
+    # Facet strip formatting
+    strip.background = element_blank(),
+    strip.text = element_text(size = 18, face = "bold"),
+    
+    # Axis text for the numeric axis (bottom after flip)
+    axis.text.x = element_text(hjust = 1, size = 18, face = "bold"),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    
+    # Legend
+    legend.position = "none"
+  )  +     
+  # Use element_markdown for the axis that now shows plant names (y-axis after flip)
+  theme(axis.text.y = element_text(face = "bold", size = 18))
+
+
+##### Beta diversity analysis
+#### Rhizosphere-wise:
+
+library(ade4)
+library("factoextra")
+library(dplyr)
+c <- read.csv("countdata_plant.csv",row.names=1)
+meta <- read.csv("metadata_plant.csv")
+identical(colnames(c),meta$Sample)
+library(microbiome)
+transform <- microbiome::transform
+rel <- transform(c, "compositional")
+rel2 <- as.matrix(t(rel))
+my_colors <- c(
+  "red", "blue", "darkgreen", "purple")
+res.pca <- dudi.pca(rel2,
+                    scannf = FALSE, nf = 5)
+groups <- as.factor(meta$Plant)
+s.class(res.pca$li,                                                  
+        fac = groups,  # color by groups
+        col = my_colors, clabel = 0)
+group_colors <- my_colors
+fviz_pca_ind(res.pca,
+             col.ind = groups,
+             palette = group_colors,
+             addEllipses = FALSE,
+             mean.point = FALSE,
+             repel = TRUE,
+             label = "none",
+             pointsize = 2,
+             pointshape = 19,
+             alpha.ind = 0.7) +
+  labs(color = "Plants") +   # <-- new legend title
+  theme_bw() + theme(
+    axis.text.x = element_text(size = 18, family = "Arial"),
+    axis.text.y = element_text(size = 18, family = "Arial"),
+    axis.title.x = element_text(size = 20, family = "Arial"),
+    axis.title.y = element_text(size = 20, family = "Arial"),
+    plot.title = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 16, family = "Arial"),
+    legend.title = element_text(size = 18, family = "Arial"),
+    legend.text = element_text(size = 16, family = "Arial", face = "italic"),
+    panel.border = element_rect(linewidth = 0.5, color = "gray40")
+  )
+rand1 <- randtest(bca(res.pca, groups, scan = FALSE), 999)
+rand1
+
+####Soil-wise
+
+library(ade4)
+library("factoextra")
+library(dplyr)
+c <- read.csv("countdata_soil.csv",row.names=1)
+meta <- read.csv("metadata_soil.csv")
+identical(colnames(c),meta$Sample)
+library(microbiome)
+transform <- microbiome::transform
+rel <- transform(c, "compositional")
+rel2 <- as.matrix(t(rel))
+my_colors <- c(
+  "red", "blue", "darkgreen", "orange", "purple",
+  "brown", "pink", "cyan", "magenta", "gold",
+  "limegreen", "tomato")
+res.pca <- dudi.pca(rel2,
+                    scannf = FALSE, nf = 5)
+groups <- as.factor(meta$Region)
+s.class(res.pca$li,                                                  
+        fac = groups,  # color by groups
+        col = my_colors, clabel = 0)
+group_colors <- my_colors
+fviz_pca_ind(res.pca,
+             col.ind = groups,
+             palette = group_colors,
+             addEllipses = FALSE,
+             mean.point = FALSE,
+             repel = TRUE,
+             label = "none",
+             pointsize = 2,
+             pointshape = 19,
+             alpha.ind = 0.7) +
+  labs(color = "Sampling location") +   # <-- new legend title
+  theme_bw() + theme(
+    axis.text.x = element_text(size = 18, family = "Arial"),
+    axis.text.y = element_text(size = 18, family = "Arial"),
+    axis.title.x = element_text(size = 20, family = "Arial"),
+    axis.title.y = element_text(size = 20, family = "Arial"),
+    plot.title = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 16, family = "Arial"),
+    legend.title = element_text(size = 18, family = "Arial"),
+    legend.text = element_text(size = 16, family = "Arial"),
+    panel.border = element_rect(linewidth = 0.5, color = "gray40")
+  )
+rand1 <- randtest(bca(res.pca, groups, scan = FALSE), 999)
+rand1
