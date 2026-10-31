@@ -1,0 +1,20 @@
+count <- read.csv("relative_abundance.csv",row.names=1)
+meta <- read.csv("metadata.csv",header=T,row.names=1)
+dim(count)
+dim(meta)
+identical(colnames(count),rownames(meta))
+library(igraph)   # For network analysis
+library(vegan)    # For calculating dissimilarity metrics
+library(dplyr)
+diss_matrix <- vegdist(count, method = "jaccard")
+diss_matrix[is.na(diss_matrix)] <- 0
+diss_matrix <- as.matrix(diss_matrix)
+sim_matrix <- 1 - diss_matrix
+sim_vector <- sim_matrix[lower.tri(sim_matrix)]
+sorted_sim_vector <- sort(sim_vector, decreasing = TRUE)
+sparsity_percentile <- 10
+threshold <- quantile(sorted_sim_vector, 1 - sparsity_percentile / 100)  # calculating threshold value
+threshold
+adj_matrix <- sim_matrix >= threshold
+network <- graph.adjacency(adj_matrix, mode = "undirected")
+write.graph(network, file = "network.graphml", format = "graphml")
