@@ -83,7 +83,7 @@ fviz_pca_ind(res.pca,
 rand1 <- randtest(bca(res.pca, groups, scan = FALSE), 999)
 rand1
 
-####Soil-wise
+#### Soil-wise
 
 library(ade4)
 library("factoextra")
