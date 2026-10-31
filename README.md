@@ -5,8 +5,8 @@ The aim of this study is to identify the plant-growth promoting microbes of the 
 A step-by-step, resumable shell workflow for shotgun metagenomic data. It goes from raw SRA
 downloads to read QC, taxonomic profiling (MetaPhlAn), functional annotation (HUMAnN), assembly,
 binning, bin quality assessment, viral protein screening of high-quality bins, strain-level
-identification (StrainScan and StrainGE, including custom database construction), and R scripts that
-correlate *Cutibacterium acnes* with bacteriophages and bacteriophages with bacterial pathways.
+identification (StrainScan and StrainGE, including custom database construction), bacteriophage
+abundance (DIAMOND, TPM), and R scripts that correlate *Cutibacterium acnes* with bacteriophages and bacteriophages with bacterial pathways.
 
 ## Workflow
 
@@ -26,9 +26,11 @@ flowchart TD
     S["10 build StrainScan<br/>database"] --> SS
     C --> SG["13 StrainGE<br/>strain identification"]
     SD["12 build StrainGE<br/>database"] --> SG
-    D --> R["14 R: Spearman correlations"]
+    D --> R["15 R: Spearman correlations"]
     HU --> R
-    P["your phage abundance table<br/>(TPM)"] --> R
+    C --> PH["14 DIAMOND blastx + TPM<br/>bacteriophage abundance"]
+    V --> PH
+    PH --> R
 ```
 
 | Step | Script | Main tools | Key output |
@@ -46,7 +48,8 @@ flowchart TD
 | 11 | `11_strainscan_identify_strains.sh` | StrainScan | `results/11_strainscan_identify/<sample>/<database>/` |
 | 12 | `12_strainge_build_db.sh` | StrainGE | `results/12_strainge_db/<db_name>/<db_name>_pan-genome-db.hdf5` |
 | 13 | `13_strainge_identify_strains.sh` | StrainGE | `results/13_strainge_identify/<sample>/<sample>_<database>.tsv` |
-| 14 | `14_correlation_analysis.sh` | R (corrplot, ggcorrplot, psych) | `results/14_correlation/*.png`, `*.csv` |
+| 14 | `14_phage_abundance_tpm.sh` | DIAMOND, Python | `results/14_phage_abundance/bacteriophage_abundance_tpm.csv` |
+| 15 | `15_correlation_analysis.sh` | R (corrplot, ggcorrplot, psych) | `results/15_correlation/*.png`, `*.csv` |
 
 `scripts/setup_humann_databases.sh` is a one-time download used by step 4.
 
@@ -69,7 +72,7 @@ mamba env create -f envs/metaphlan.yml   # step 3
 mamba env create -f envs/humann.yml      # step 4
 mamba env create -f envs/checkm2.yml     # step 7
 mamba env create -f envs/strainge.yml    # steps 12, 13
-mamba env create -f envs/r-analysis.yml  # step 14
+mamba env create -f envs/r-analysis.yml  # step 15
 ```
 
 **One-time database setup**
@@ -135,8 +138,11 @@ mamba activate atacama-strainge
 bash scripts/12_strainge_build_db.sh
 bash scripts/13_strainge_identify_strains.sh
 
+mamba activate atacama-core
+bash scripts/14_phage_abundance_tpm.sh      # needs steps 2 and 8
+
 mamba activate atacama-r
-bash scripts/14_correlation_analysis.sh     # needs your phage table, see "Step 14 inputs"
+bash scripts/15_correlation_analysis.sh     # needs steps 3, 4 and 14 (or your own phage table)
 ```
 
 Every setting in `config/config.sh` can be overridden per run without editing it, for example
@@ -216,9 +222,30 @@ the others; the step reports how many failed and exits with an error at the end.
 k-merized reads (`<sample>.hdf5`) so that a new database can be searched without repeating that step; delete them
 to save space.
 
-### Step 14: correlation analyses
+### Step 14: bacteriophage abundance (TPM)
 
-Step 14 runs three R scripts from `analysis/`; each can also be used on its own (`--help` lists the options).
+Uses the viral protein database of step 8. Every trimmed read file is searched with `diamond blastx` (best hit per
+read, e-value `PHAGE_EVALUE`), then `analysis/compute_phage_tpm.py` turns the hits into a phage x sample table:
+
+1. a read pair is one fragment and is assigned to the phage of its best-scoring hit over both mates; hits below
+   `PHAGE_MIN_IDENTITY` % identity are ignored;
+2. a hit belongs to a phage when the organism name in square brackets at the end of the subject title (RefSeq style,
+   `[Escherichia phage T4]`) matches `PHAGE_NAME_FILTER` (default `phage`);
+3. `rate = fragments / total protein length of that phage in the database` and
+   `TPM = rate / sum of the rates of all phages in the sample x 1,000,000`, so every sample sums to 1e6 over all
+   phages detected in it;
+4. phages with fewer than `PHAGE_MIN_FRAGMENTS` fragments over all samples are left out of the tables (the filter is
+   applied after the TPM calculation and does not change any value).
+
+Besides `bacteriophage_abundance_tpm.csv`, the folder has the raw fragment counts, a per-sample summary and the lengths
+used. TPM here is relative to the phages detected in the same sample, not to the total sequencing depth: a sample with
+few phage reads can still show a high TPM for one phage, so read the counts and the summary alongside the TPM.
+This is a standard quantification and not a copy of any earlier custom calculation, so a table you already made
+elsewhere may differ in values and phage names. Set `PHAGE_TPM` to use your own table in step 15.
+
+### Step 15: correlation analyses
+
+Step 15 runs three R scripts from `analysis/`; each can also be used on its own (`--help` lists the options).
 
 | R script | What it does | Output |
 |----------|--------------|--------|
@@ -226,9 +253,9 @@ Step 14 runs three R scripts from `analysis/`; each can also be used on its own 
 | `correlate_cacnes_phages.R` | Spearman correlation of *C. acnes* with every phage, one-row circle plot (red = negative, blue = positive) | `cacnes_phage_correlations.csv`, `cacnes_phage_corrplot.png` |
 | `correlate_phages_pathways.R` | Spearman correlation of every phage with every pathway, square-tile plot with the coefficients printed | `phage_pathway_{rho,pvalue,long}.csv`, `phage_pathway_corrplot.png` |
 
-**Step 14 inputs.** The two MetaPhlAn/HUMAnN tables come from steps 3 and 4. The bacteriophage abundance
-table is **not produced by this workflow**; supply it yourself (set `PHAGE_TPM`, default
-`data/phage/bacteriophage_abundance_tpm.csv`). All tables are CSV files with feature names in the first
+**Step 15 inputs.** The MetaPhlAn and HUMAnN tables come from steps 3 and 4, the bacteriophage abundance
+table from step 14 (`PHAGE_TPM`, default `results/14_phage_abundance/bacteriophage_abundance_tpm.csv`); set
+`PHAGE_TPM` to your own file to use a different table. All tables are CSV files with feature names in the first
 column and one numeric column per sample, and the same sample IDs (the run accessions) in every table:
 
 ```
@@ -246,8 +273,8 @@ script). To correlate a different species, set `CORR_SPECIES` (MetaPhlAn name wi
 ```bash
 mamba activate atacama-r
 METAPHLAN_DIR=examples/toy_data/03_metaphlan HUMANN_DIR=examples/toy_data/04_humann \
-PHAGE_TPM=examples/toy_data/bacteriophage_abundance_tpm.csv CORR_DIR=results/14_correlation_toy \
-bash scripts/14_correlation_analysis.sh
+PHAGE_TPM=examples/toy_data/bacteriophage_abundance_tpm.csv CORR_DIR=results/15_correlation_toy \
+bash scripts/15_correlation_analysis.sh
 ```
 
 ## Repository layout
@@ -260,8 +287,8 @@ bash scripts/14_correlation_analysis.sh
 │   ├── strainscan_databases.txt   # databases searched by step 11 (optional)
 │   └── strainge_databases.txt     # databases searched by step 13 (optional)
 ├── envs/                    # conda environment files
-├── scripts/                 # numbered pipeline steps (01 ... 14) + setup_humann_databases.sh
-├── analysis/                # R scripts used by step 14
+├── scripts/                 # numbered pipeline steps (01 ... 15) + setup_humann_databases.sh
+├── analysis/                # step 14 (Python) and step 15 (R) analysis scripts
 ├── examples/toy_data/       # synthetic example tables (formats only, not real data)
 ├── data/                    # created at run time, git-ignored
 ├── results/                 # created at run time, git-ignored
@@ -287,6 +314,8 @@ bash scripts/14_correlation_analysis.sh
 - **Strain identification:** StrainScan (`StrainScan.py -i R1 -j R2 -d <database>`) and StrainGE's StrainGST
   (reads k-merized with `straingst kmerize`, then `straingst run` against a pan-genome database). Reads are searched
   against each listed database separately; compare results only between runs with the same database and settings.
+- **Phage abundance:** `diamond blastx --max-target-seqs 1` of trimmed reads against RefSeq viral proteins, read pairs
+  counted per phage (organism name in the subject title), length-normalised and scaled to TPM (Step 14).
 - **Correlations:** Spearman rank correlation on samples present in both tables. Features with zero variance are
   removed. For each analysis the p-values are corrected across all tested pairs with Benjamini-Hochberg (`q_value_BH`
   in the output tables); the plots show the correlation coefficients only. *C. acnes* vs phages uses pairwise-complete
@@ -304,7 +333,8 @@ bash scripts/14_correlation_analysis.sh
 | Step 12: "no assembly report" or "prepare_strainge_db.py not found" | `STRAINGE_GENOMES_DIR` needs the genomes (`*.fa`) and the assembly report (`*.txt`); download `prepare_strainge_db.py` and set `STRAINGE_DIR` (see Installation). |
 | Step 13: "StrainGE database not found" | List the database path without `_pan-genome-db.hdf5` (or give the `.hdf5` file), or build it with step 12. |
 | A sample is skipped with "not found (run step N)" | The input of that step is missing for the sample; run the earlier step first. |
-| Step 14: "Need at least 3 shared samples" | Sample IDs differ between the tables. For MetaPhlAn names, adjust `--metaphlan-suffix` of `prepare_correlation_inputs.R`. |
+| Step 14: "no organism matching 'phage'" or "no phage has at least N fragments" | The viral FASTA has no `[organism]` tags or no phage names, or very few reads hit. Check `PHAGE_NAME_FILTER`, lower `PHAGE_MIN_FRAGMENTS`, and look at `bacteriophage_sample_summary.tsv`. |
+| Step 15: "Need at least 3 shared samples" | Sample IDs differ between the tables. For MetaPhlAn names, adjust `--metaphlan-suffix` of `prepare_correlation_inputs.R`. |
 | Plot labels are cut off | Set `--width` / `--height` for the R scripts. |
 
 ## Tools
