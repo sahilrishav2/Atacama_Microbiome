@@ -1,12 +1,18 @@
+# Atacama Microbiome
+
 The aim of this study is to identify the plant-growth promoting microbes of the Atacama desert that can survive harsh environmental conditions. We performed large scale analysis of all the publicly available microbiome datasets (16S amplicon and Whole metagenome) of this region. The codes used for the analysis are provided here.
 
-# Atacama Microbiome: Shotgun Metagenomics Workflow
+The repository has two parts:
 
-A step-by-step, resumable shell workflow for shotgun metagenomic data. It goes from raw SRA
-downloads to read QC, taxonomic profiling (MetaPhlAn), functional annotation (HUMAnN), assembly,
-binning, bin quality assessment, viral protein screening of high-quality bins, strain-level
-identification (StrainScan and StrainGE, including custom database construction), bacteriophage
-abundance (DIAMOND, TPM), and R scripts that correlate *Cutibacterium acnes* with bacteriophages and bacteriophages with bacterial pathways.
+- **16S amplicon analyses**: alpha diversity, beta diversity and a co-occurrence network, as R Markdown documents
+  (`Microbial_community_analysis.Rmd`, `Co-occurrence_network.Rmd`) with their input tables in `Amplicon_data/`.
+  See [16S amplicon analyses](#16s-amplicon-analyses).
+- **Shotgun metagenomics workflow**: a step-by-step, resumable shell workflow (steps 1-15) from raw SRA downloads to
+  read QC, taxonomic profiling (MetaPhlAn), functional annotation (HUMAnN), assembly, binning, bin quality assessment,
+  viral protein screening of high-quality bins, strain-level identification (StrainScan and StrainGE, including
+  custom database construction), bacteriophage abundance (DIAMOND, TPM), and R scripts that correlate
+  *Cutibacterium acnes* with bacteriophages and bacteriophages with bacterial pathways. It is described in the
+  sections from [Workflow](#workflow) to [Troubleshooting](#troubleshooting).
 
 ## Workflow
 
@@ -73,6 +79,7 @@ mamba env create -f envs/humann.yml      # step 4
 mamba env create -f envs/checkm2.yml     # step 7
 mamba env create -f envs/strainge.yml    # steps 12, 13
 mamba env create -f envs/r-analysis.yml  # step 15
+mamba env create -f envs/amplicon.yml    # 16S amplicon analyses
 ```
 
 **One-time database setup**
@@ -277,6 +284,38 @@ PHAGE_TPM=examples/toy_data/bacteriophage_abundance_tpm.csv CORR_DIR=results/15_
 bash scripts/15_correlation_analysis.sh
 ```
 
+## 16S amplicon analyses
+
+Two R Markdown documents in the repository root analyse the 16S amplicon count tables in `Amplicon_data/`. They are
+independent of the shotgun steps above.
+
+| Document | Analyses | Input files (see `Amplicon_data/INPUT_FILES.md`) | Output in `results/amplicon/` |
+|----------|----------|-----------------------------------------------|-------------------------------|
+| `Microbial_community_analysis.Rmd` | Alpha diversity (Shannon, Simpson) by `Origin`; beta diversity as PCA of compositional data with a between-group permutation test, for rhizosphere samples (by `Plant`) and soil samples (by `Region`) | `countdata.csv`, `metadata.csv`, `countdata_plant.csv`, `metadata_plant.csv`, `countdata_soil.csv`, `metadata_soil.csv` | `Microbial_community_analysis.html` |
+| `Co-occurrence_network.Rmd` | Network of taxa: Jaccard similarity between abundance profiles, keeping the 10% most similar pairs | `relative_abundance.csv`, `metadata.csv` | `Co-occurrence_network.html`, `network.graphml` (for Gephi or Cytoscape) |
+
+```bash
+mamba env create -f envs/amplicon.yml
+mamba activate atacama-amplicon
+bash scripts/amplicon_analysis.sh      # renders both documents
+```
+
+You can also open a document in RStudio and knit it or run its chunks, with the repository folder as working
+directory. The input folder and the output folder are the `params` at the top of each document
+(`data_dir`, `out_dir`) and, for the script, `AMPLICON_DIR` and `AMPLICON_OUT_DIR`.
+
+Notes on reproducibility:
+
+- Input files are looked up in `Amplicon_data/` and, if not found there, in its sub-folders; the file name must be unique.
+  A missing or ambiguous file stops the document with a message that names it.
+- The permutation tests (`randtest`, 999 permutations) use a fixed seed (`seed` in the first chunk), so the p-values are
+  the same on every run. The seed is not the one of any earlier run, so a p-value can differ slightly from one obtained
+  before.
+- Each document stops if the sample order of a count table and its metadata differ (before, this was only printed as
+  `FALSE`), because the group labels would otherwise be assigned to the wrong samples.
+- The figures use the font Arial, which many Linux systems lack; R then substitutes another font and the text looks slightly different.
+- Each report ends with `sessionInfo()`, which lists the exact package versions used.
+
 ## Repository layout
 
 ```
@@ -286,8 +325,11 @@ bash scripts/15_correlation_analysis.sh
 │   ├── accessions.txt       # SRA run accessions to process
 │   ├── strainscan_databases.txt   # databases searched by step 11 (optional)
 │   └── strainge_databases.txt     # databases searched by step 13 (optional)
+├── Amplicon_data/           # input tables of the 16S amplicon analyses (+ INPUT_FILES.md)
+├── Microbial_community_analysis.Rmd   # 16S alpha and beta diversity
+├── Co-occurrence_network.Rmd          # 16S co-occurrence network
 ├── envs/                    # conda environment files
-├── scripts/                 # numbered pipeline steps (01 ... 15) + setup_humann_databases.sh
+├── scripts/                 # numbered pipeline steps (01 ... 15), setup_humann_databases.sh, amplicon_analysis.sh
 ├── analysis/                # step 14 (Python) and step 15 (R) analysis scripts
 ├── examples/toy_data/       # synthetic example tables (formats only, not real data)
 ├── data/                    # created at run time, git-ignored
@@ -316,6 +358,9 @@ bash scripts/15_correlation_analysis.sh
   against each listed database separately; compare results only between runs with the same database and settings.
 - **Phage abundance:** `diamond blastx --max-target-seqs 1` of trimmed reads against RefSeq viral proteins, read pairs
   counted per phage (organism name in the subject title), length-normalised and scaled to TPM (Step 14).
+- **16S amplicon analyses:** alpha diversity (Shannon, Simpson) with phyloseq; beta diversity as PCA (ade4) of compositional
+  abundances with a Monte Carlo test of between-group differences (999 permutations, fixed seed); co-occurrence network
+  from the Jaccard similarity of abundance profiles (vegan), keeping the 10% most similar pairs (igraph).
 - **Correlations:** Spearman rank correlation on samples present in both tables. Features with zero variance are
   removed. For each analysis the p-values are corrected across all tested pairs with Benjamini-Hochberg (`q_value_BH`
   in the output tables); the plots show the correlation coefficients only. *C. acnes* vs phages uses pairwise-complete
@@ -335,6 +380,8 @@ bash scripts/15_correlation_analysis.sh
 | A sample is skipped with "not found (run step N)" | The input of that step is missing for the sample; run the earlier step first. |
 | Step 14: "no organism matching 'phage'" or "no phage has at least N fragments" | The viral FASTA has no `[organism]` tags or no phage names, or very few reads hit. Check `PHAGE_NAME_FILTER`, lower `PHAGE_MIN_FRAGMENTS`, and look at `bacteriophage_sample_summary.tsv`. |
 | Step 15: "Need at least 3 shared samples" | Sample IDs differ between the tables. For MetaPhlAn names, adjust `--metaphlan-suffix` of `prepare_correlation_inputs.R`. |
+| Amplicon: "Input file not found" or "Input file name is not unique" | The table is not in `Amplicon_data/` (or the folder set by `AMPLICON_DIR`), or the same name exists in several sub-folders. See `Amplicon_data/INPUT_FILES.md` for the expected names. |
+| Amplicon: the document stops at `stopifnot(identical(...))` | The columns of the count table and the samples of the metadata are in a different order or have different IDs. Fix the files so that they match. |
 | Plot labels are cut off | Set `--width` / `--height` for the R scripts. |
 
 ## Tools
@@ -353,7 +400,7 @@ bash scripts/15_correlation_analysis.sh
 [DIAMOND](https://github.com/bbuchfink/diamond) ·
 [StrainScan](https://github.com/liaoherui/StrainScan) ·
 [StrainGE](https://github.com/broadinstitute/strainge) ·
-R packages [corrplot](https://github.com/taiyun/corrplot), [ggcorrplot](https://github.com/kassambara/ggcorrplot) and [psych](https://cran.r-project.org/package=psych)
+R packages [corrplot](https://github.com/taiyun/corrplot), [ggcorrplot](https://github.com/kassambara/ggcorrplot), [psych](https://cran.r-project.org/package=psych), [phyloseq](https://github.com/joey711/phyloseq), [microbiome](https://github.com/microbiome/microbiome), [vegan](https://github.com/vegandevs/vegan), [igraph](https://igraph.org/r/), [ade4](https://cran.r-project.org/package=ade4) and [factoextra](https://cran.r-project.org/package=factoextra)
 
 Please cite the original publications of these tools when you use this workflow, in particular
 MetaPhlAn 4 (Blanco-Míguez et al., *Nat Biotechnol* 2023), HUMAnN 3 / bioBakery 3 (Beghini et al., *eLife* 2021),
