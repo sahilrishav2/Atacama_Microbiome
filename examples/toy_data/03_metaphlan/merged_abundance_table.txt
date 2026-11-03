@@ -1,0 +1,11 @@
+#mpa_vJun23_CHOCOPhlAnSGB_202403
+clade_name	S01_metagenome	S02_metagenome	S03_metagenome	S04_metagenome	S05_metagenome	S06_metagenome	S07_metagenome	S08_metagenome	S09_metagenome	S10_metagenome	S11_metagenome	S12_metagenome
+k__Bacteria	100.0	100.0	100.0	100.0	100.0	100.0	100.0	100.0	100.0	100.0	100.0	100.0
+k__Bacteria|p__Actinobacteriota	22.811	13.297	40.801	8.984	34.474	25.113	8.19	32.909	7.062	28.851	8.842	9.989
+k__Bacteria|p__Actinobacteriota|c__Actinomycetia|o__Propionibacteriales|f__Propionibacteriaceae|g__Cutibacterium	22.811	13.297	40.801	8.984	34.474	25.113	8.19	32.909	7.062	28.851	8.842	9.989
+k__Bacteria|p__Actinobacteriota|c__Actinomycetia|o__Propionibacteriales|f__Propionibacteriaceae|g__Cutibacterium|s__Cutibacterium_acnes	22.811	13.297	40.801	8.984	34.474	25.113	8.19	32.909	7.062	28.851	8.842	9.989
+k__Bacteria|p__Actinobacteriota|c__Actinomycetia|o__Propionibacteriales|f__Propionibacteriaceae|g__Cutibacterium|s__Cutibacterium_acnes|t__SGB99999	22.811	13.297	40.801	8.984	34.474	25.113	8.19	32.909	7.062	28.851	8.842	9.989
+k__Bacteria|p__Firmicutes	77.189	86.703	59.199	91.016	65.526	74.887	91.81	67.091	92.938	71.149	91.158	90.011
+k__Bacteria|p__Firmicutes|c__Bacilli|o__Bacillales|f__Staphylococcaceae|g__Staphylococcus	77.189	86.703	59.199	91.016	65.526	74.887	91.81	67.091	92.938	71.149	91.158	90.011
+k__Bacteria|p__Firmicutes|c__Bacilli|o__Bacillales|f__Staphylococcaceae|g__Staphylococcus|s__Staphylococcus_epidermidis	77.189	86.703	59.199	91.016	65.526	74.887	91.81	67.091	92.938	71.149	91.158	90.011
+k__Bacteria|p__Firmicutes|c__Bacilli|o__Bacillales|f__Staphylococcaceae|g__Staphylococcus|s__Staphylococcus_epidermidis|t__SGB99998	77.189	86.703	59.199	91.016	65.526	74.887	91.81	67.091	92.938	71.149	91.158	90.011

@@ -1,0 +1,41 @@
+---
+title: "Merging the genus tables of several datasets"
+output: html_document
+params:
+  input_dir: "results/amplicon/genus_tables"   # one .tsv per dataset: a Genus column and one column per sample
+  out_dir: "results/amplicon"
+  collapse: "mean"                             # how rows of the same genus are combined: "mean" (as originally) or "sum"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE)
+dir.create(params$out_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r merge}
+library(dplyr)
+# This will read ALL .tsv files in the input folder
+file_list <- list.files(params$input_dir, pattern = "\\.tsv$", full.names = TRUE)
+# Check which files were found
+print(file_list)
+stopifnot("no .tsv files found in input_dir" = length(file_list) > 0)
+collapse_fun <- match.fun(params$collapse)
+# Read and process all files
+final_df <- lapply(file_list, function(file) {
+  read.table(file, header = TRUE, sep = "\t", check.names = FALSE)
+}) %>% 
+  bind_rows() %>% 
+  replace(is.na(.), 0) %>%
+  group_by(Genus) %>%
+  summarise(across(where(is.numeric), collapse_fun)) %>%
+  ungroup()
+final_df <- as.data.frame(final_df)
+dim(final_df)
+write.csv(final_df, file.path(params$out_dir, "merged_bacteria.csv"), row.names=F)
+```
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```

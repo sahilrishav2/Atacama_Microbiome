@@ -1,0 +1,6 @@
+name: atacama-strainge
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - strainge          # provides straingst; prepare_strainge_db.py is a separate download (see README)

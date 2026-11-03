@@ -1,0 +1,7 @@
+name: atacama-humann
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - humann=3.9
+  - metaphlan=4.1.*     # HUMAnN 3.9 needs a vJun23 (MetaPhlAn 4.0/4.1) or MetaPhlAn 3 profile

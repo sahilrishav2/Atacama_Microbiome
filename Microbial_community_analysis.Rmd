@@ -1,0 +1,210 @@
+---
+title: "Microbial community analyses: alpha and beta diversity"
+output:
+  html_document:
+    toc: true
+params:
+  data_dir: "downstream_input"   # folder with the count tables and metadata files
+  out_dir: "results/downstream"    # where figures and tables are written
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE, fig.width = 8, fig.height = 6)
+dir.create(params$out_dir, recursive = TRUE, showWarnings = FALSE)
+
+# The permutation tests (randtest) use random numbers. The seed is fixed so that the p-values can be reproduced.
+seed <- 1234
+
+# Finds an input table: directly in params$data_dir, otherwise anywhere below it (the name must be unique there).
+find_input <- function(name) {
+  direct <- file.path(params$data_dir, name)
+  if (file.exists(direct)) return(direct)
+  found <- list.files(params$data_dir, recursive = TRUE, full.names = TRUE)
+  hits <- found[basename(found) == name]
+  if (length(hits) == 1) return(hits)
+  stop(if (length(hits) == 0) "Input file not found: " else "Input file name is not unique: ", name,
+       " (searched in '", params$data_dir, "')", call. = FALSE)
+}
+```
+
+# Microbial community analyses
+
+## Alpha diversity analysis
+
+```{r alpha-diversity}
+library(phyloseq)
+library(ggplot2)
+library(RColorBrewer)
+
+count <- read.csv(find_input("countdata.csv"), header = T, row.names = 1, check.names = FALSE)
+meta <- read.csv(find_input("metadata.csv"), header = T, row.names = 1)
+
+ps <- phyloseq(otu_table(count, taxa_are_rows = TRUE),
+               sample_data(meta))
+ps
+
+p <- plot_richness(ps, "Origin", color = "Origin", measures = c("Shannon", "Simpson"))
+
+p + geom_boxplot(aes(x = Origin, colour = Origin)) +
+  labs(x = NULL, y = NULL) +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_rect(colour = "black"),
+    # Facet strip formatting
+    strip.background = element_blank(),
+    strip.text = element_text(size = 18, face = "bold"),
+    # Axis text for the numeric axis (bottom after flip)
+    axis.text.x = element_text(hjust = 1, size = 18, face = "bold"),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # Legend
+    legend.position = "none"
+  ) +
+  # Use element_markdown for the axis that now shows plant names (y-axis after flip)
+  theme(axis.text.y = element_text(face = "bold", size = 18))
+```
+
+## Beta diversity analysis
+
+### Rhizosphere-wise
+
+```{r beta-rhizosphere-data}
+library(ade4)
+library("factoextra")
+library(dplyr)
+
+c <- read.csv(find_input("countdata_plant.csv"), row.names = 1, check.names = FALSE)
+meta <- read.csv(find_input("metadata_plant.csv"))
+
+# the columns of the count table must be in the same order as the samples of the metadata
+stopifnot(identical(colnames(c), meta$Sample))
+
+library(microbiome)
+transform <- microbiome::transform
+
+rel <- transform(c, "compositional")
+rel2 <- as.matrix(t(rel))
+
+my_colors <- c(
+  "red", "blue", "darkgreen", "purple")
+
+res.pca <- dudi.pca(rel2,
+                    scannf = FALSE, nf = 5)
+
+groups <- as.factor(meta$Plant)
+
+s.class(res.pca$li,
+        fac = groups,   # color by groups
+        col = my_colors, clabel = 0)
+```
+
+```{r beta-rhizosphere-pca}
+group_colors <- my_colors
+
+fviz_pca_ind(res.pca,
+             col.ind = groups,
+             palette = group_colors,
+             addEllipses = FALSE,
+             mean.point = FALSE,
+             repel = TRUE,
+             label = "none",
+             pointsize = 2,
+             pointshape = 19,
+             alpha.ind = 0.7) +
+  labs(color = "Plants") +   # <-- new legend title
+  theme_bw() + theme(
+    axis.text.x = element_text(size = 18, family = "Arial"),
+    axis.text.y = element_text(size = 18, family = "Arial"),
+    axis.title.x = element_text(size = 20, family = "Arial"),
+    axis.title.y = element_text(size = 20, family = "Arial"),
+    plot.title = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 16, family = "Arial"),
+    legend.title = element_text(size = 18, family = "Arial"),
+    legend.text = element_text(size = 16, family = "Arial", face = "italic"),
+    panel.border = element_rect(linewidth = 0.5, color = "gray40")
+  )
+```
+
+```{r beta-rhizosphere-test}
+set.seed(seed)
+rand1 <- randtest(bca(res.pca, groups, scan = FALSE), 999)
+rand1
+```
+
+### Soil-wise
+
+```{r beta-soil-data}
+library(ade4)
+library("factoextra")
+library(dplyr)
+
+c <- read.csv(find_input("countdata_soil.csv"), row.names = 1, check.names = FALSE)
+meta <- read.csv(find_input("metadata_soil.csv"))
+
+# the columns of the count table must be in the same order as the samples of the metadata
+stopifnot(identical(colnames(c), meta$Sample))
+
+library(microbiome)
+transform <- microbiome::transform
+
+rel <- transform(c, "compositional")
+rel2 <- as.matrix(t(rel))
+
+my_colors <- c(
+  "red", "blue", "darkgreen", "orange", "purple",
+  "brown", "pink", "cyan", "magenta", "gold",
+  "limegreen", "tomato")
+
+res.pca <- dudi.pca(rel2,
+                    scannf = FALSE, nf = 5)
+
+groups <- as.factor(meta$Region)
+
+s.class(res.pca$li,
+        fac = groups,   # color by groups
+        col = my_colors, clabel = 0)
+```
+
+```{r beta-soil-pca}
+group_colors <- my_colors
+
+fviz_pca_ind(res.pca,
+             col.ind = groups,
+             palette = group_colors,
+             addEllipses = FALSE,
+             mean.point = FALSE,
+             repel = TRUE,
+             label = "none",
+             pointsize = 2,
+             pointshape = 19,
+             alpha.ind = 0.7) +
+  labs(color = "Sampling location") +   # <-- new legend title
+  theme_bw() + theme(
+    axis.text.x = element_text(size = 18, family = "Arial"),
+    axis.text.y = element_text(size = 18, family = "Arial"),
+    axis.title.x = element_text(size = 20, family = "Arial"),
+    axis.title.y = element_text(size = 20, family = "Arial"),
+    plot.title = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 16, family = "Arial"),
+    legend.title = element_text(size = 18, family = "Arial"),
+    legend.text = element_text(size = 16, family = "Arial"),
+    panel.border = element_rect(linewidth = 0.5, color = "gray40")
+  )
+```
+
+```{r beta-soil-test}
+set.seed(seed)
+rand1 <- randtest(bca(res.pca, groups, scan = FALSE), 999)
+rand1
+```
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```

@@ -1,0 +1,6 @@
+# StrainGE databases for step 13, one per line (blank lines and # comments are ignored).
+# Give the database path WITHOUT the "_pan-genome-db.hdf5" suffix (an *.hdf5 file path also works).
+# If this file has no entries, the database built by step 12 is used.
+# Example (uses /full_path/E.meliloti_pan-genome-db.hdf5):
+# /full_path/E.meliloti
+# /full_path/A.humicireducens

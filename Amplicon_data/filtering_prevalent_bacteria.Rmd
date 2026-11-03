@@ -1,0 +1,38 @@
+---
+title: "Prevalence filtering of the merged genus table"
+output: html_document
+params:
+  input: "results/amplicon/merged_bacteria.csv"   # output of the merging document
+  metadata: "downstream_input/metadata.csv"       # needs a column "Sample"
+  threshold: 0.9                                  # a genus must be present in at least this fraction of the samples
+  out_dir: "results/amplicon"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE)
+dir.create(params$out_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r filter}
+count <- read.csv(params$input, row.names=1, check.names=FALSE)
+dim(count)
+meta <- read.csv(params$metadata)
+stopifnot("the metadata needs a column 'Sample'" = "Sample" %in% colnames(meta))
+sample_cols <- which(colnames(count) %in% meta$Sample)
+head(sample_cols)
+identical(colnames(count),meta$Sample)
+n <- length(sample_cols)
+n
+presence <- rowSums(count[, sample_cols] > 0)
+prevalence <- presence / n
+keep <- prevalence >= params$threshold
+filtered <- count[keep,]
+dim(filtered)
+write.csv(filtered, file.path(params$out_dir, sprintf("merged_bacteria_%d%%_prevalence.csv", round(100 * params$threshold))))
+```
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```

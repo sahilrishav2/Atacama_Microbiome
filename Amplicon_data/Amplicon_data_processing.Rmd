@@ -1,0 +1,199 @@
+---
+title: "16S amplicon data processing with DADA2 (one dataset)"
+output:
+  html_document:
+    toc: true
+params:
+  dataset: ""            # name of the dataset, e.g. its BioProject (required); results go to <out_dir>/<dataset>/
+  fastq_dir: ""          # folder with the paired-end reads, named <sample>_1.fastq[.gz] and <sample>_2.fastq[.gz] (required)
+  trunc_len_f: -1        # truncation length of the forward reads, chosen from the quality plots (required)
+  trunc_len_r: -1        # truncation length of the reverse reads (required)
+  quality_only: false    # true: only draw the quality plots, to choose the truncation lengths, and stop
+  out_dir: "results/amplicon"
+  genus_dir: "results/amplicon/genus_tables"   # the genus table of this dataset, input of the merging document
+  silva_db: "databases/silva/silva_nr99_v138.1_wSpecies_train_set.fa.gz"
+  multithread: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE, fig.width = 8, fig.height = 5)
+stopifnot("set the parameters 'dataset' and 'fastq_dir'" = nzchar(params$dataset) && nzchar(params$fastq_dir))
+```
+
+## To perform ASV based analysis, we directly load paired-end reads fastq files in R and perform processing through dada2
+
+```{r load-reads}
+library(dada2)
+path <- params$fastq_dir #directory containing fastq files
+list.files(path)
+```
+
+## Sorting of fastq files
+
+```{r sort-files}
+fnFs <- sort(list.files(path, pattern="_1.fastq", full.names=TRUE))
+fnRs <- sort(list.files(path, pattern="_2.fastq", full.names=TRUE))
+stopifnot("no forward/reverse read pairs found in fastq_dir" = length(fnFs) > 0 && length(fnFs) == length(fnRs))
+```
+
+## Extraction of sample names having extension ".fastq"
+
+```{r sample-names}
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+```
+
+## Inspecting read quality profiles
+
+```{r quality-profiles}
+plotQualityProfile(fnFs[1:2]) #forward reads
+plotQualityProfile(fnRs[1:2]) #reverse reads
+```
+
+```{r quality-only, include = FALSE}
+# with quality_only the document ends here: choose trunc_len_f and trunc_len_r from the plots above
+if (isTRUE(params$quality_only)) knitr::knit_exit()
+```
+
+```{r check-parameters, include = FALSE}
+trunc_f <- params$trunc_len_f
+trunc_r <- params$trunc_len_r
+stopifnot("set trunc_len_f and trunc_len_r (use quality_only first to look at the quality plots)" = trunc_f >= 0 && trunc_r >= 0)
+stopifnot("Silva training file not found: run scripts/setup_silva_database.sh" = file.exists(params$silva_db))
+ds_dir <- file.path(params$out_dir, params$dataset)       # all results of this dataset
+filt_dir <- file.path(ds_dir, "filtered")
+dir.create(filt_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(params$genus_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+## Assigning the filenames for the filtered fastq.gz files
+
+```{r filenames}
+filtFs <- file.path(filt_dir, paste0(sample.names, "-F-filt.fastq.gz"))
+filtRs <- file.path(filt_dir, paste0(sample.names, "-R-filt.fastq.gz"))
+```
+
+## For filtering of reads
+
+```{r filter-reads}
+for(i in seq_along(fnFs)) { fastqPairedFilter(c(fnFs[i], fnRs[i]), c(filtFs[i], filtRs[i]), truncLen=c(trunc_f, trunc_r), maxN=0, maxEE=c(2,2), truncQ=2, compress=TRUE, verbose=TRUE) }
+```
+
+## Sample inference
+
+```{r sample-inference}
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+names(derepFs) <- sample.names
+names(derepRs) <- sample.names
+dadaFs <- dada(derepFs, err=inflateErr(tperr1,3), selfConsist = TRUE, MAX_CONSIST=20)
+dadaRs <- dada(derepRs, err=inflateErr(tperr1,3), selfConsist = TRUE, MAX_CONSIST=20)
+```
+
+## Merging of paired reads
+
+```{r merge-pairs}
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose=TRUE)
+head(mergers[[1]])
+```
+
+## Constructing sequence table
+
+```{r sequence-table}
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab)
+table(nchar(getSequences(seqtab))) #Inspecting distribution of sequence lengths
+```
+
+## Removing chimeras
+
+```{r chimeras}
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=params$multithread, verbose=TRUE)
+dim(seqtab.nochim)
+sum(seqtab.nochim)/sum(seqtab)
+```
+
+## Assigning taxonomy
+
+```{r taxonomy}
+taxa <- assignTaxonomy(seqtab.nochim, params$silva_db, multithread=params$multithread)
+```
+
+## Inspecting the taxonomic assignments
+
+```{r inspect-taxonomy}
+taxa.print <- taxa
+rownames(taxa.print) <- NULL
+head(taxa.print)
+```
+
+## Extracting the count values and the sequences from dada2 output
+
+```{r write-dada2-output}
+# giving our seq headers more manageable names (ASV_1, ASV_2...)
+asv_seqs <- colnames(seqtab.nochim)
+asv_headers <- vector(dim(seqtab.nochim)[2], mode="character")
+
+for (i in 1:dim(seqtab.nochim)[2]) {
+  asv_headers[i] <- paste(">ASV", i, sep="_")
+}
+
+# making and writing out a fasta of our final ASV seqs:
+asv_fasta <- c(rbind(asv_headers, asv_seqs))
+write(asv_fasta, file.path(ds_dir, "ASVs.fa"))
+
+# count table:
+asv_tab <- t(seqtab.nochim)
+row.names(asv_tab) <- sub(">", "", asv_headers)
+write.table(asv_tab, file.path(ds_dir, "ASVs_counts.tsv"), sep="\t", quote=F, col.names=NA)
+
+# taxonomy table:
+rownames(taxa.print) <- rownames(asv_tab)
+head(taxa.print)
+write.table(taxa.print, file.path(ds_dir, "ASVs_taxonomy.tsv"), sep="\t", quote=F, col.names=NA)
+```
+
+## Now, we load phyloseq for further analysis of the amplicon data
+
+```{r phyloseq}
+library(phyloseq)
+seq <- as.matrix(seqtab.nochim)+1 # for removing zeroes from the count table
+tax <- taxa
+dim(seq)
+colnames(seq) <- paste0("ASV_", seq_len(ncol(seq))) #for giving unique ASV Ids to each sequence
+rownames(tax) <- colnames(seq)
+ps <- phyloseq(otu_table(seq, taxa_are_rows=FALSE), 
+               tax_table(tax))
+ps1 <- ps #assigning all the information of ps to a new object ps1
+rank_names(ps1) # check the taxonomy levels
+#Removing sequences not aligning to the bacteria
+ps1a <- subset_taxa(ps1,Order!="Chloroplast")
+ps1b <- subset_taxa(ps1a,Family!="Mitochondria")
+ps1 <- subset_taxa(ps1b,Kingdom!="Archaea")
+ps
+ps1
+count <- t(ps1@otu_table)
+write.table(count, file.path(ds_dir, "ps1_ASVs_counts.tsv"), sep="\t", quote=F, col.names=NA) ## writing a new count file
+write.table(ps1@tax_table, file.path(ds_dir, "ps1_ASVs_taxonomy.tsv"), sep="\t", quote=F, col.names=NA) ## writing a new taxonomy file
+```
+
+## Genus table of this dataset
+
+This step was added so that the workflow runs without manual editing. The merging document needs one table per dataset:
+a `Genus` column followed by one column per sample, with the ASVs as rows. ASVs without a genus assignment are
+dropped, because they cannot be merged by genus. Note that the counts of `ps1` include the `+1` added above.
+
+```{r genus-table}
+count_m <- as(count, "matrix")
+genus <- as(tax_table(ps1), "matrix")[rownames(count_m), "Genus"]
+genus_table <- data.frame(Genus = genus, count_m, check.names = FALSE, stringsAsFactors = FALSE)
+genus_table <- genus_table[!is.na(genus_table$Genus), ]
+write.table(genus_table, file.path(params$genus_dir, paste0(params$dataset, ".tsv")),
+            sep = "\t", quote = FALSE, row.names = FALSE)
+dim(genus_table)
+```
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```

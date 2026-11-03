@@ -1,0 +1,5 @@
+# StrainScan databases for step 11, one folder per line (blank lines and # comments are ignored).
+# If this file has no entries, the database built by step 10 is used.
+# Example:
+# /full_path/E.meliloti
+# /full_path/A.humicireducens

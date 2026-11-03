@@ -1,0 +1,4 @@
+# One SRA run accession per line (SRR / ERR / DRR). Lines starting with # are ignored.
+# These two are the accessions that appear in the original commands - replace with your own.
+SRR9729086
+SRR9729087

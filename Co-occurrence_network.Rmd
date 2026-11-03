@@ -1,0 +1,72 @@
+---
+title: "Co-occurrence network of microbial taxa"
+output: html_document
+params:
+  data_dir: "downstream_input"   # folder with the abundance table and metadata file
+  out_dir: "results/downstream"    # where network.graphml is written
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE)
+dir.create(params$out_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Finds an input table: directly in params$data_dir, otherwise anywhere below it (the name must be unique there).
+find_input <- function(name) {
+  direct <- file.path(params$data_dir, name)
+  if (file.exists(direct)) return(direct)
+  found <- list.files(params$data_dir, recursive = TRUE, full.names = TRUE)
+  hits <- found[basename(found) == name]
+  if (length(hits) == 1) return(hits)
+  stop(if (length(hits) == 0) "Input file not found: " else "Input file name is not unique: ", name,
+       " (searched in '", params$data_dir, "')", call. = FALSE)
+}
+```
+
+## Input data
+
+```{r input}
+count <- read.csv(find_input("relative_abundance.csv"), row.names = 1, check.names = FALSE)
+meta <- read.csv(find_input("metadata.csv"), header = T, row.names = 1)
+
+dim(count)
+dim(meta)
+
+# the samples (columns) of the abundance table must match the metadata
+stopifnot(identical(colnames(count), rownames(meta)))
+```
+
+## Network construction
+
+The Jaccard similarity (1 - dissimilarity) between the rows of the abundance table is calculated, and the
+`sparsity_percentile` percent most similar pairs are connected. The network is written as GraphML for Gephi or Cytoscape.
+
+```{r network}
+library(igraph) # For network analysis
+library(vegan) # For calculating dissimilarity metrics
+library(dplyr)
+
+diss_matrix <- vegdist(count, method = "jaccard")
+diss_matrix[is.na(diss_matrix)] <- 0
+diss_matrix <- as.matrix(diss_matrix)
+sim_matrix <- 1 - diss_matrix
+
+sim_vector <- sim_matrix[lower.tri(sim_matrix)]
+sorted_sim_vector <- sort(sim_vector, decreasing = TRUE)
+
+sparsity_percentile <- 10
+threshold <- quantile(sorted_sim_vector, 1 - sparsity_percentile / 100) # calculating threshold value
+threshold
+
+adj_matrix <- sim_matrix >= threshold
+
+network <- graph_from_adjacency_matrix(adj_matrix, mode = "undirected")   # graph.adjacency() in older igraph versions
+network
+
+write_graph(network, file = file.path(params$out_dir, "network.graphml"), format = "graphml")
+```
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```

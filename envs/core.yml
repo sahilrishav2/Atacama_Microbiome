@@ -1,0 +1,17 @@
+name: atacama-core
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.8      # step 14 (phage abundance) uses a standard-library-only Python script
+  - sra-tools
+  - pigz
+  - wget
+  - fastqc
+  - multiqc
+  - fastp
+  - megahit
+  - bwa
+  - samtools
+  - metabat2
+  - diamond

@@ -1,0 +1,9 @@
+name: atacama-r
+channels:
+  - conda-forge
+dependencies:
+  - r-base>=4.2
+  - r-corrplot
+  - r-ggcorrplot
+  - r-ggplot2
+  - r-psych

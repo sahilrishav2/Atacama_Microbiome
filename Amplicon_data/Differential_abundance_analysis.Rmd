@@ -1,0 +1,61 @@
+---
+title: "Differential abundance analysis (limma-voom)"
+output: html_document
+params:
+  input: "results/amplicon/merged_bacteria_90%_prevalence.csv"   # output of the filtering document
+  metadata: "downstream_input/metadata.csv"    # needs the columns "Sample" and group_column
+  group_column: "Origin"                       # metadata column with the groups
+  group_a: "Plant"                             # the contrast is group_a - group_b
+  group_b: "Soil"
+  fdr: 0.05                                    # adjusted p-value cut-off for the table of significant genera
+  out_dir: "results/amplicon"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE)
+dir.create(params$out_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r relative-abundance}
+c <- read.csv(params$input, row.names=1, check.names=FALSE)
+library(microbiome)
+transform <- microbiome::transform
+rel <- transform(c, "compositional")
+rel_file <- file.path(params$out_dir, paste0("relative_abundance_", basename(params$input)))
+write.csv(rel, rel_file)
+p <- read.csv(rel_file, row.names=1, check.names=FALSE)
+m <- read.csv(params$metadata)
+# the samples of the metadata must be in the same order as the columns of the table
+stopifnot("sample order of the metadata and of the abundance table differ" = identical(m$Sample, colnames(p)))
+m1 <- m
+```
+
+```{r voom}
+library(limma)
+snames <- m1[[params$group_column]]
+group <- snames
+mm <- model.matrix(~0 + group)
+y <- voom(p, mm, plot = T)
+head(mm)
+```
+
+```{r contrast}
+fit <- lmFit(y, mm)
+head(coef(fit))
+contr <- makeContrasts(contrasts = paste0("group", params$group_a, " - group", params$group_b), levels = colnames(coef(fit)))
+tmp <- contrasts.fit(fit, contr)
+tmp <- eBayes(tmp)
+top.table <- topTable(tmp, sort.by = "P", n = Inf)
+head(top.table, 20)
+length(which(top.table$adj.P.Val < params$fdr))
+newdf <- top.table[top.table$adj.P.Val < params$fdr,]
+dim(newdf)
+newdf
+write.csv(newdf, file.path(params$out_dir, paste0("diff_", tolower(params$group_a), "_", tolower(params$group_b), ".csv")))
+```
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```

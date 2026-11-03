@@ -1,0 +1,6 @@
+name: atacama-metaphlan
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - metaphlan=4.1.*     # pinned: 4.2 renames options and defaults to the vJan25 database (not HUMAnN 3.9 compatible)
