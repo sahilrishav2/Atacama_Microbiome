@@ -2,17 +2,20 @@
 
 The aim of this study is to identify the plant-growth promoting microbes of the Atacama desert that can survive harsh environmental conditions. We performed large scale analysis of all the publicly available microbiome datasets (16S amplicon and Whole metagenome) of this region. The codes used for the analysis are provided here.
 
-The repository has two parts:
+The repository has three parts:
 
-- **16S amplicon analyses**: alpha diversity, beta diversity and a co-occurrence network, as R Markdown documents
-  (`Microbial_community_analysis.Rmd`, `Co-occurrence_network.Rmd`) with their input tables in `Amplicon_data/`.
-  See [16S amplicon analyses](#16s-amplicon-analyses).
+- **16S amplicon workflow** (`Amplicon_data/`): four R Markdown documents that take amplicon datasets from reads to a
+  differential abundance test (DADA2 processing, merging of datasets, prevalence filtering, limma-voom).
+  See [16S amplicon workflow](#16s-amplicon-workflow).
 - **Shotgun metagenomics workflow**: a step-by-step, resumable shell workflow (steps 1-15) from raw SRA downloads to
   read QC, taxonomic profiling (MetaPhlAn), functional annotation (HUMAnN), assembly, binning, bin quality assessment,
   viral protein screening of high-quality bins, strain-level identification (StrainScan and StrainGE, including
   custom database construction), bacteriophage abundance (DIAMOND, TPM), and R scripts that correlate
   *Cutibacterium acnes* with bacteriophages and bacteriophages with bacterial pathways. It is described in the
   sections from [Workflow](#workflow) to [Troubleshooting](#troubleshooting).
+- **Downstream community analysis for both data types**: `Microbial_community_analysis.Rmd` (alpha and beta diversity)
+  and `Co-occurrence_network.Rmd` take a taxon abundance table from amplicon *or* shotgun data.
+  See [Downstream community analysis](#downstream-community-analysis-amplicon-and-shotgun-data).
 
 ## Workflow
 
@@ -79,7 +82,8 @@ mamba env create -f envs/humann.yml      # step 4
 mamba env create -f envs/checkm2.yml     # step 7
 mamba env create -f envs/strainge.yml    # steps 12, 13
 mamba env create -f envs/r-analysis.yml  # step 15
-mamba env create -f envs/amplicon.yml    # 16S amplicon analyses
+mamba env create -f envs/amplicon.yml    # 16S amplicon workflow
+mamba env create -f envs/downstream.yml  # downstream community analysis (R Markdown documents)
 ```
 
 **One-time database setup**
@@ -284,29 +288,102 @@ PHAGE_TPM=examples/toy_data/bacteriophage_abundance_tpm.csv CORR_DIR=results/15_
 bash scripts/15_correlation_analysis.sh
 ```
 
-## 16S amplicon analyses
+## 16S amplicon workflow
 
-Two R Markdown documents in the repository root analyse the 16S amplicon count tables in `Amplicon_data/`. They are
-independent of the shotgun steps above.
+Four R Markdown documents in `Amplicon_data/` process 16S amplicon datasets (one per study or BioProject) and compare
+groups. Scripts run them with the settings of `config/config.sh`; each document also works on its own in RStudio.
 
-| Document | Analyses | Input files (see `Amplicon_data/INPUT_FILES.md`) | Output in `results/amplicon/` |
-|----------|----------|-----------------------------------------------|-------------------------------|
-| `Microbial_community_analysis.Rmd` | Alpha diversity (Shannon, Simpson) by `Origin`; beta diversity as PCA of compositional data with a between-group permutation test, for rhizosphere samples (by `Plant`) and soil samples (by `Region`) | `countdata.csv`, `metadata.csv`, `countdata_plant.csv`, `metadata_plant.csv`, `countdata_soil.csv`, `metadata_soil.csv` | `Microbial_community_analysis.html` |
-| `Co-occurrence_network.Rmd` | Network of taxa: Jaccard similarity between abundance profiles, keeping the 10% most similar pairs | `relative_abundance.csv`, `metadata.csv` | `Co-occurrence_network.html`, `network.graphml` (for Gephi or Cytoscape) |
-
-```bash
-mamba env create -f envs/amplicon.yml
-mamba activate atacama-amplicon
-bash scripts/amplicon_analysis.sh      # renders both documents
+```mermaid
+flowchart LR
+    SRA["reads of one dataset<br/>(step 1, own accession file)"] --> P["amplicon_process_dataset.sh<br/>DADA2, once per dataset"]
+    P --> G["genus table of the dataset"]
+    G --> A["amplicon_analysis.sh<br/>merge, prevalence filter, limma-voom"]
+    MD["metadata.csv"] --> A
+    A --> D["prepare_downstream_input.sh<br/>(DOWNSTREAM_SOURCE=amplicon)"]
+    D --> R["downstream_analysis.sh"]
 ```
 
+| Document | What it does | Main output |
+|----------|--------------|-------------|
+| `Amplicon_data_processing.Rmd` | One dataset: quality filtering, ASVs (DADA2), chimera removal, SILVA taxonomy, removal of chloroplast, mitochondria and archaea (phyloseq), and a table with a `Genus` column | `<dataset>/ASVs_counts.tsv`, `ASVs_taxonomy.tsv`, `ps1_*`, `genus_tables/<dataset>.tsv` |
+| `merging_multiple_count_abundance_tables.Rmd` | Merges the genus tables of all datasets | `merged_bacteria.csv` |
+| `filtering_prevalent_bacteria.Rmd` | Keeps the genera present in at least `AMPLICON_PREVALENCE` (default 90%) of the samples | `merged_bacteria_90%_prevalence.csv` |
+| `Differential_abundance_analysis.Rmd` | Relative abundances, then limma-voom for `AMPLICON_GROUP_A` - `AMPLICON_GROUP_B` (default Plant - Soil) | `relative_abundance_*.csv`, `diff_plant_soil.csv` |
+
+Everything is written to `results/amplicon/` (`AMPLICON_DIR`), the HTML reports to `results/amplicon/reports/`.
+
+```bash
+# 1. Reads of ONE dataset: its own accession file and folders (reads must be paired-end)
+mamba activate atacama-core
+ACCESSIONS_FILE=config/accessions_studyA.txt RAW_DIR=data/amplicon/studyA SRA_DIR=data/amplicon/sra \
+  bash scripts/01_download_sra.sh
+
+mamba activate atacama-amplicon
+bash scripts/setup_silva_database.sh                                       # once: SILVA 138.1 for DADA2
+
+# 2. Per dataset. First only the read-quality plots, to choose the truncation lengths ...
+bash scripts/amplicon_process_dataset.sh studyA data/amplicon/studyA
+#    ... then the processing with the lengths you chose (forward, reverse)
+bash scripts/amplicon_process_dataset.sh studyA data/amplicon/studyA 240 200
+
+# 3. All datasets together (put the samples of ALL datasets in downstream_input/metadata.csv first)
+bash scripts/amplicon_analysis.sh
+```
+
+`metadata.csv` has one row per sample with the columns `Sample` and `Origin` (`Plant` or `Soil`); the same file is used by the
+filtering and differential abundance documents and by the downstream analysis (`downstream_input/README.md`). The
+samples are named by their run accession, i.e. the part of the file name before the first `_`. To go on with the
+downstream documents, run `DOWNSTREAM_SOURCE=amplicon bash scripts/prepare_downstream_input.sh`.
+
+To try steps 3 onwards with synthetic data, see `examples/toy_data/amplicon/`.
+
+What the documents do, so that results can be compared with earlier ones:
+
+- The processing document ends in a genus table with the counts of `ps1`, which include the `+1` added to remove zeros.
+  ASVs without a genus are dropped. This table was a manual step before; the rest of the code is unchanged.
+- The merging document combines rows of the same genus with `AMPLICON_COLLAPSE` (default `mean`, as in the original code).
+  The mean is taken over all rows of the genus, including the zeros filled in for the samples of the other datasets.
+  Use `AMPLICON_COLLAPSE=sum` to add them up instead.
+- The differential abundance document applies limma `voom` to relative abundances, as in the original code; `voom` is
+  designed for read counts.
+- Truncation lengths differ between datasets and must be chosen from the quality plots; the DADA2 filtering step
+  and the error model are as in the original code. The filtered reads are written to `<dataset>/filtered/`.
+
+## Downstream community analysis (amplicon and shotgun data)
+
+Two R Markdown documents in the repository root work on any taxon abundance table, so the same documents serve the
+amplicon and the shotgun data:
+
+| Document | Analyses | Input files (see `downstream_input/README.md`) | Output in `results/downstream/` |
+|----------|----------|------------------------------------------------|---------------------------------|
+| `Microbial_community_analysis.Rmd` | Alpha diversity (Shannon, Simpson) by `Origin`; beta diversity as PCA of compositional data with a between-group permutation test, for plant samples (by `Plant`) and soil samples (by `Region`) | `countdata.csv`, `metadata.csv`, `countdata_plant.csv`, `metadata_plant.csv`, `countdata_soil.csv`, `metadata_soil.csv` | `Microbial_community_analysis.html` |
+| `Co-occurrence_network.Rmd` | Network of taxa: Jaccard similarity between abundance profiles, keeping the 10% most similar pairs | `relative_abundance.csv`, `metadata.csv` | `Co-occurrence_network.html`, `network.graphml` (for Gephi or Cytoscape) |
+
+**Input.** Put the tables in `downstream_input/` (formats and required columns are described there). For amplicon data
+these are your final count tables and metadata. For shotgun data, step 3 gives a merged MetaPhlAn table: put your
+metadata files in `downstream_input/` and let `prepare_downstream_input.sh` convert the MetaPhlAn table into the count
+and abundance tables, with the samples in the order of each metadata file:
+
+```bash
+mamba activate atacama-core
+bash scripts/prepare_downstream_input.sh      # shotgun only; rank: DOWNSTREAM_RANK (default species)
+
+mamba env create -f envs/downstream.yml
+mamba activate atacama-downstream
+bash scripts/downstream_analysis.sh           # renders both documents
+```
+
+MetaPhlAn tables contain relative abundances (percent), not read counts. That is suitable for the analyses in these two
+documents, but not for methods that need counts.
+
 You can also open a document in RStudio and knit it or run its chunks, with the repository folder as working
-directory. The input folder and the output folder are the `params` at the top of each document
-(`data_dir`, `out_dir`) and, for the script, `AMPLICON_DIR` and `AMPLICON_OUT_DIR`.
+directory. The input and output folders are the `params` at the top of each document (`data_dir`, `out_dir`) and, for
+the script, `DOWNSTREAM_DIR` and `DOWNSTREAM_OUT_DIR`. To try everything with synthetic data, see
+`examples/toy_data/downstream/`.
 
 Notes on reproducibility:
 
-- Input files are looked up in `Amplicon_data/` and, if not found there, in its sub-folders; the file name must be unique.
+- Input files are looked up in the input folder and, if not found there, in its sub-folders; the file name must be unique.
   A missing or ambiguous file stops the document with a message that names it.
 - The permutation tests (`randtest`, 999 permutations) use a fixed seed (`seed` in the first chunk), so the p-values are
   the same on every run. The seed is not the one of any earlier run, so a p-value can differ slightly from one obtained
@@ -325,12 +402,14 @@ Notes on reproducibility:
 │   ├── accessions.txt       # SRA run accessions to process
 │   ├── strainscan_databases.txt   # databases searched by step 11 (optional)
 │   └── strainge_databases.txt     # databases searched by step 13 (optional)
-├── Amplicon_data/           # input tables of the 16S amplicon analyses (+ INPUT_FILES.md)
-├── Microbial_community_analysis.Rmd   # 16S alpha and beta diversity
-├── Co-occurrence_network.Rmd          # 16S co-occurrence network
+├── Amplicon_data/           # four R Markdown documents of the 16S amplicon workflow
+├── downstream_input/        # input tables of the two documents below (formats in its README)
+├── Microbial_community_analysis.Rmd   # alpha and beta diversity (amplicon or shotgun data)
+├── Co-occurrence_network.Rmd          # co-occurrence network (amplicon or shotgun data)
 ├── envs/                    # conda environment files
-├── scripts/                 # numbered pipeline steps (01 ... 15), setup_humann_databases.sh, amplicon_analysis.sh
-├── analysis/                # step 14 (Python) and step 15 (R) analysis scripts
+├── scripts/                 # numbered pipeline steps (01 ... 15), setup_humann_databases.sh, setup_silva_database.sh, amplicon_process_dataset.sh, amplicon_analysis.sh,
+│                            # prepare_downstream_input.sh, downstream_analysis.sh
+├── analysis/                # step 14 (Python), step 15 (R), table conversion (Python), render_rmd.R
 ├── examples/toy_data/       # synthetic example tables (formats only, not real data)
 ├── data/                    # created at run time, git-ignored
 ├── results/                 # created at run time, git-ignored
@@ -358,7 +437,10 @@ Notes on reproducibility:
   against each listed database separately; compare results only between runs with the same database and settings.
 - **Phage abundance:** `diamond blastx --max-target-seqs 1` of trimmed reads against RefSeq viral proteins, read pairs
   counted per phage (organism name in the subject title), length-normalised and scaled to TPM (Step 14).
-- **16S amplicon analyses:** alpha diversity (Shannon, Simpson) with phyloseq; beta diversity as PCA (ade4) of compositional
+- **16S amplicon workflow:** DADA2 (`fastqPairedFilter`, self-consistent error model, merging of pairs, consensus chimera removal),
+  taxonomy with the SILVA 138.1 training set, removal of chloroplast, mitochondria and archaea with phyloseq, merging of the
+  genus tables of all datasets, prevalence filtering, and differential abundance with limma-voom on relative abundances.
+- **Downstream community analysis:** alpha diversity (Shannon, Simpson) with phyloseq; beta diversity as PCA (ade4) of compositional
   abundances with a Monte Carlo test of between-group differences (999 permutations, fixed seed); co-occurrence network
   from the Jaccard similarity of abundance profiles (vegan), keeping the 10% most similar pairs (igraph).
 - **Correlations:** Spearman rank correlation on samples present in both tables. Features with zero variance are
@@ -380,8 +462,11 @@ Notes on reproducibility:
 | A sample is skipped with "not found (run step N)" | The input of that step is missing for the sample; run the earlier step first. |
 | Step 14: "no organism matching 'phage'" or "no phage has at least N fragments" | The viral FASTA has no `[organism]` tags or no phage names, or very few reads hit. Check `PHAGE_NAME_FILTER`, lower `PHAGE_MIN_FRAGMENTS`, and look at `bacteriophage_sample_summary.tsv`. |
 | Step 15: "Need at least 3 shared samples" | Sample IDs differ between the tables. For MetaPhlAn names, adjust `--metaphlan-suffix` of `prepare_correlation_inputs.R`. |
-| Amplicon: "Input file not found" or "Input file name is not unique" | The table is not in `Amplicon_data/` (or the folder set by `AMPLICON_DIR`), or the same name exists in several sub-folders. See `Amplicon_data/INPUT_FILES.md` for the expected names. |
-| Amplicon: the document stops at `stopifnot(identical(...))` | The columns of the count table and the samples of the metadata are in a different order or have different IDs. Fix the files so that they match. |
+| Amplicon: "set trunc_len_f and trunc_len_r" | Call `amplicon_process_dataset.sh` with the two truncation lengths; run it without them first to get the quality plots. |
+| Amplicon: "Silva training file not found" | Run `scripts/setup_silva_database.sh` (or set `SILVA_DB`). |
+| Amplicon: "sample order of the metadata and of the abundance table differ" | The samples of `metadata.csv` must be in the same order as the columns of the filtered table (the order of the genus tables). Reorder the metadata rows. |
+| Downstream: "Input file not found" or "Input file name is not unique" | The table is not in `downstream_input/` (or the folder set by `DOWNSTREAM_DIR`), or the same name exists in several sub-folders. See `downstream_input/README.md` for the expected names. |
+| Downstream: the document stops at `stopifnot(identical(...))` | The columns of the count table and the samples of the metadata are in a different order or have different IDs. Fix the files so that they match. |
 | Plot labels are cut off | Set `--width` / `--height` for the R scripts. |
 
 ## Tools
@@ -400,11 +485,13 @@ Notes on reproducibility:
 [DIAMOND](https://github.com/bbuchfink/diamond) ·
 [StrainScan](https://github.com/liaoherui/StrainScan) ·
 [StrainGE](https://github.com/broadinstitute/strainge) ·
-R packages [corrplot](https://github.com/taiyun/corrplot), [ggcorrplot](https://github.com/kassambara/ggcorrplot), [psych](https://cran.r-project.org/package=psych), [phyloseq](https://github.com/joey711/phyloseq), [microbiome](https://github.com/microbiome/microbiome), [vegan](https://github.com/vegandevs/vegan), [igraph](https://igraph.org/r/), [ade4](https://cran.r-project.org/package=ade4) and [factoextra](https://cran.r-project.org/package=factoextra)
+R packages [dada2](https://github.com/benjjneb/dada2), [limma](https://bioconductor.org/packages/limma/), [corrplot](https://github.com/taiyun/corrplot), [ggcorrplot](https://github.com/kassambara/ggcorrplot), [psych](https://cran.r-project.org/package=psych), [phyloseq](https://github.com/joey711/phyloseq), [microbiome](https://github.com/microbiome/microbiome), [vegan](https://github.com/vegandevs/vegan), [igraph](https://igraph.org/r/), [ade4](https://cran.r-project.org/package=ade4) and [factoextra](https://cran.r-project.org/package=factoextra)
 
 Please cite the original publications of these tools when you use this workflow, in particular
 MetaPhlAn 4 (Blanco-Míguez et al., *Nat Biotechnol* 2023), HUMAnN 3 / bioBakery 3 (Beghini et al., *eLife* 2021),
-StrainScan (Liao et al., *Microbiome* 2023) and StrainGE (van Dijk et al., *Genome Biol* 2022).
+StrainScan (Liao et al., *Microbiome* 2023), StrainGE (van Dijk et al., *Genome Biol* 2022), DADA2 (Callahan et al.,
+*Nat Methods* 2016), SILVA (Quast et al., *Nucleic Acids Res* 2013), phyloseq (McMurdie and Holmes, *PLoS ONE* 2013) and
+limma-voom (Law et al., *Genome Biol* 2014).
 
 ## License
 
